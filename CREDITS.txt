@@ -1,0 +1,6 @@
+광안리 바다멍 - 소리 출처 (모두 CC0 / 퍼블릭 도메인, Freesound.org)
+- snd_waves.m4a   : "Waves crash surf bright detail beach cu loop BAHAMAS" (freesound #573187), 일부 구간
+- snd_gulls.m4a   : "Seagulls screeching on the beach, on the peruvian shore" by Felix Blume (freesound #155747), 일부 구간
+- snd_gull1.m4a   : "Seagull single call" (freesound #263786)
+- snd_crowd.m4a   : "230727_001 Sopot Beach Summer" (freesound #698330), 일부 구간
+- snd_traffic.m4a : "AMB-Night,Quiet,DistantTraffic,Lisbon,Portugal" (freesound #776263)

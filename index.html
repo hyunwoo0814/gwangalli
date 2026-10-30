@@ -8,8 +8,8 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="광안리 바다멍">
 <meta property="og:description" content="지금 이 시각, 광안리 바다 앞에 돗자리 펴고 앉기. 실시간 노을·광안대교 야경·파도 소리.">
-<meta property="og:image" content="https://hyunwoo0814.github.io/gwangalli/og.jpg">
-<meta property="og:url" content="https://hyunwoo0814.github.io/gwangalli/">
+<meta property="og:image" content="https://gwangalli.vercel.app/og.jpg">
+<meta property="og:url" content="https://gwangalli.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#0b0f1a">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23161a2e'/%3E%3Cpath d='M6 40h52M14 40V22M50 40V22M14 22q18 22 36 0' stroke='%23c9a7ff' stroke-width='3' fill='none'/%3E%3Cpath d='M4 48q7-4 14 0t14 0 14 0 14 0' stroke='%235fd1c7' stroke-width='3' fill='none'/%3E%3C/svg%3E">
@@ -50,6 +50,7 @@
   .seg { display: flex; gap: 4px; background: rgba(255,255,255,.07); padding: 3px; border-radius: 10px; }
   .seg button { flex: 1; border: 0; padding: 7px 0; border-radius: 8px; background: transparent; color: var(--txt); font-size: 12px; cursor: pointer; }
   .seg button.on { background: rgba(255,255,255,.18); font-weight: 600; }
+  .pbtn { width: 100%; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1); color: #fff; border-radius: 10px; padding: 9px; font-size: 13px; cursor: pointer; }
   #hourRow { display: none; }
   #hourRow.show { display: grid; }
   #intro { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 60%, rgba(10,14,24,.15), rgba(4,6,12,.6)); overflow: auto;
@@ -85,6 +86,9 @@
   #peopleList.hidden { display: none; }
   #peopleList h4 { margin: 0 0 6px; font-size: 12px; opacity: .6; font-weight: 600; }
   #peopleList div { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  #peopleList .roomrow { display: flex; justify-content: space-between; align-items: center; }
+  #peopleList .roomrow button { border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1); color: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+  #peopleList .roomrow button:disabled { opacity: .4; cursor: default; }
   .idle #peopleList { opacity: 0; }
   #intro .card { background: rgba(10,13,22,.35); border-radius: 24px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   #shot { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(4,6,12,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
@@ -158,6 +162,9 @@
   <div class="row"><span>갈매기</span><input type="range" min="0" max="100" value="60" data-k="gulls"></div>
   <div class="row"><span>사람들</span><input type="range" min="0" max="100" value="55" data-k="people"></div>
   <div class="row"><span>자동차</span><input type="range" min="0" max="100" value="45" data-k="cars"></div>
+  <h4>드론쇼</h4>
+  <div id="droneInfo" style="font-size:12px;opacity:.8;line-height:1.5;margin-bottom:8px"></div>
+  <button id="dronePrev" class="pbtn">드론쇼 미리보기 (2분 30초)</button>
   <h4>시간</h4>
   <div class="seg" id="timeSeg">
     <button data-m="real" class="on">실시간</button>
@@ -886,6 +893,42 @@ class Ambience {
     this.beds(); this.voices = []; for (let i = 0; i < 7; i++) this.voices.push(this.makeVoice());
     const t = ctx.currentTime; this.next = { gull: t + 4, car: t + 2, small: t + 1.5, laugh: t + 25 };
     this.on = true;
+    this.rec = {}; this.loops = {}; this.loadRecs();
+    setInterval(() => this.scheduleLoops(), 1000);
+  }
+  // 실제 녹음(CC0, Freesound) 불러와서 끊김 없이 겹쳐 반복
+  loadRecs() {
+    for (const n of ['waves', 'crowd', 'traffic', 'gulls', 'gull1']) {
+      fetch(`snd_${n}.m4a`).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+        .then(b => new Promise((res, rej) => this.ctx.decodeAudioData(b, res, rej)))
+        .then(buf => { this.rec[n] = buf; if (n !== 'gull1') this.startLoop(n, buf); }).catch(() => { });
+    }
+  }
+  startLoop(n, buf) {
+    const bus = { waves: 'waves', crowd: 'people', traffic: 'cars', gulls: 'gulls' }[n];
+    const g = this.gain(0);
+    if (n === 'gulls') { const hp = this.filt('highpass', 1100, 0.6); g.connect(hp).connect(this.bus[bus]); } else g.connect(this.bus[bus]);
+    this.loops[n] = { buf, g, next: this.ctx.currentTime + 0.1, first: true };
+    this.scheduleLoops();
+  }
+  scheduleLoops() {
+    if (!this.on) return;
+    const ctx = this.ctx, X = 3;
+    for (const L of Object.values(this.loops)) {
+      while (L.next < ctx.currentTime + 70) {
+        const off = rand(0, L.buf.duration * (L.first ? 0.6 : 0.25)), dur = L.buf.duration - off, t = Math.max(L.next, ctx.currentTime + 0.05);
+        const s = ctx.createBufferSource(); s.buffer = L.buf; const sg = this.gain(0); s.connect(sg).connect(L.g);
+        sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(1, t + (L.first ? 1.5 : X)); sg.gain.setValueAtTime(1, t + dur - X); sg.gain.linearRampToValueAtTime(0, t + dur);
+        s.start(t, off); s.stop(t + dur + 0.05);
+        L.next = t + dur - X; L.first = false;
+      }
+    }
+  }
+  gullRec(level) {
+    const ctx = this.ctx, n = Math.floor(rand(1, 4)), pan = this.pan(rand(-0.85, 0.85)), g = this.gain(level * rand(0.12, 0.4)), rate = rand(0.85, 1.2);
+    g.connect(pan); pan.connect(this.bus.gulls); const send = this.gain(0.4); pan.connect(send).connect(this.rev);
+    let t = ctx.currentTime + 0.05;
+    for (let i = 0; i < n; i++) { const s = ctx.createBufferSource(); s.buffer = this.rec.gull1; s.playbackRate.value = rate * rand(0.95, 1.05); s.connect(g); s.start(t); t += this.rec.gull1.duration / rate + rand(0.12, 0.4); }
   }
   impulse(dur, decay) {
     const n = this.ctx.sampleRate * dur, b = this.ctx.createBuffer(2, n, this.ctx.sampleRate);
@@ -910,7 +953,7 @@ class Ambience {
   beds() {
     const ctx = this.ctx;
     // 멀리서 계속 들리는 파도 바닥음
-    const s1 = this.src(this.brown), lp1 = this.filt('lowpass', 420), g1 = this.gain(0.32);
+    const s1 = this.src(this.brown), lp1 = this.filt('lowpass', 420), g1 = this.gain(0.32); this.surfG = g1;
     const lfo = ctx.createOscillator(), lg = this.gain(0.12); lfo.frequency.value = 0.08; lfo.connect(lg); lg.connect(g1.gain);
     s1.connect(lp1).connect(g1).connect(this.bus.waves); s1.start(0, rand(0, 7)); lfo.start();
     for (const p of [-0.75, 0.75]) { const s = this.src(this.pink), f = this.filt('lowpass', 1100), g = this.gain(0.05); s.connect(f).connect(g).connect(this.pan(p)).connect(this.bus.waves); s.start(0, rand(0, 5)); }
@@ -1001,11 +1044,16 @@ class Ambience {
   update(lv, waveTrig) {
     if (!this.on) return;
     const t = this.ctx.currentTime;
-    if (waveTrig) this.crash(rand(0.75, 1.1), rand(-0.3, 0.3));
-    if (t > this.next.small) { this.crash(rand(0.35, 0.7), rand(-1, 1) * 0.9, 1); this.next.small = t + rand(1.6, 4.2); }
-    if (t > this.next.gull) { if (lv.gulls > 0.05) this.gull(lv.gulls); this.next.gull = t + rand(5, 20) / Math.max(lv.gulls, 0.15); }
-    if (t > this.next.car) { if (Math.random() < lv.cars) this.car(); this.next.car = t + rand(2.5, 9) / Math.max(lv.cars, 0.2); }
-    this.trafficG.gain.setTargetAtTime(0.04 + 0.1 * lv.cars, t, 2);
+    const L = this.loops, R = this.rec;
+    // 녹음이 준비되면 녹음 위주로, 합성음은 살짝만
+    if (L.waves) { L.waves.g.gain.setTargetAtTime(0.95, t, 1.5); this.surfG.gain.setTargetAtTime(0.06, t, 2); if (waveTrig) this.crash(rand(0.25, 0.4), rand(-0.3, 0.3)); }
+    else { if (waveTrig) this.crash(rand(0.75, 1.1), rand(-0.3, 0.3)); if (t > this.next.small) { this.crash(rand(0.35, 0.7), rand(-1, 1) * 0.9, 1); this.next.small = t + rand(1.6, 4.2); } }
+    if (L.gulls) L.gulls.g.gain.setTargetAtTime(0.4 * lv.gulls, t, 3);
+    if (t > this.next.gull) { if (lv.gulls > 0.05) { if (R.gull1) this.gullRec(lv.gulls); else this.gull(lv.gulls); } this.next.gull = t + rand(6, 22) / Math.max(lv.gulls, 0.15); }
+    if (t > this.next.car) { if (Math.random() < lv.cars) this.car(); this.next.car = t + rand(3, 11) / Math.max(lv.cars, 0.2); }
+    if (L.traffic) { L.traffic.g.gain.setTargetAtTime(0.12 + 0.4 * lv.cars, t, 2); this.trafficG.gain.setTargetAtTime(0.02 + 0.04 * lv.cars, t, 2); }
+    else this.trafficG.gain.setTargetAtTime(0.04 + 0.1 * lv.cars, t, 2);
+    if (L.crowd) { L.crowd.g.gain.setTargetAtTime(0.05 + 0.6 * lv.people, t, 2); this.murmurG.gain.setTargetAtTime(0, t, 2); return; }
     this.murmurG.gain.setTargetAtTime(0.035 * lv.people, t, 2);
     const active = Math.round(lv.people * this.voices.length);
     this.voices.forEach((v, i) => { if (i < active && t > v.busy && Math.random() < 0.3) this.speak(v); });
@@ -1221,39 +1269,96 @@ function updateCamera(t, dt) {
    같이 앉기 (실시간 접속자 공유 - 공개 MQTT 중계)
    ========================================================= */
 const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-const ROOM = (params.get('room') || 'main').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'main';
-const TOPIC = `gwangalli-badameong/v1/${ROOM}`;
+const BASE = params.get('ns') === 'test' ? 'gwangalli-badameong/test' : 'gwangalli-badameong/v1';
+const ROOM_CAP = +params.get('cap') || 40; // 한 방 최대 인원 (넘으면 다음 방으로 자동 배정)
+const ROOM_FIXED = (() => { const r = (params.get('room') || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24); return r && !['lobby', 'bye', 'lobbyq'].includes(r) ? r : null; })();
+const roomName = i => i === 1 ? 'main' : `main-${i}`;
+const roomNo = r => r === 'main' ? 1 : /^main-\d+$/.test(r) ? +r.slice(5) : null;
+const roomLabel = r => roomNo(r) ? `${roomNo(r)}번 해변` : `'${r}' 방`;
 let entered = false;
 const net = {
   ok: false, c: null, peers: new Map(), seen: {}, lastSend: 0, replyAt: 0,
+  room: null, lobby: new Map(), lobbyReadyAt: 0, lastLobby: 0, lobbyReplyAt: 0,
+  get topic() { return `${BASE}/${this.room}`; },
   connect() {
     if (!window.mqtt) { setNetStatus(); return; }
     try {
       this.c = window.mqtt.connect(BROKER, {
         clientId: 'gw_' + myId + '_' + Math.random().toString(36).slice(2, 6), keepalive: 30, reconnectPeriod: 4000, connectTimeout: 9000, clean: true,
-        will: { topic: `${TOPIC}/p/${myId}`, payload: JSON.stringify({ id: myId, bye: 1 }), qos: 0, retain: false },
+        will: { topic: `${BASE}/bye/${myId}`, payload: '1', qos: 0, retain: false },
       });
     } catch (e) { setNetStatus(); return; }
-    this.c.on('connect', () => { this.ok = true; this.c.subscribe(`${TOPIC}/#`); if (entered) this.sendState(true); this.c.publish(`${TOPIC}/q/${myId}`, '1'); setNetStatus(); });
+    this.c.on('connect', () => {
+      this.ok = true; this.lobbyReadyAt = performance.now() + 2000;
+      this.c.subscribe([`${BASE}/lobby/#`, `${BASE}/bye/#`, `${BASE}/lobbyq`]);
+      this.c.publish(`${BASE}/lobbyq`, myId);
+      if (this.room) { this.c.subscribe(`${this.topic}/#`); this.sendState(true); this.c.publish(`${this.topic}/q/${myId}`, '1'); this.lobbyBeat(); }
+      else if (entered) this.joinAuto();
+      setNetStatus();
+    });
     this.c.on('close', () => { this.ok = false; setNetStatus(); });
     this.c.on('offline', () => { this.ok = false; setNetStatus(); });
     this.c.on('message', (topic, buf) => this.onMsg(topic, buf));
   },
+  // 방별 인원 (최근 25초 안에 신호가 있던 사람)
+  roomCounts() {
+    const now = Date.now(), out = {};
+    for (const [id, v] of this.lobby) { if (now - v.t > 25000) { this.lobby.delete(id); continue; } if (id !== myId) out[v.r] = (out[v.r] || 0) + 1; }
+    if (this.room && entered) out[this.room] = (out[this.room] || 0) + 1;
+    return out;
+  },
+  totalCount() { return Object.values(this.roomCounts()).reduce((a, b) => a + b, 0); },
+  pickRoom() {
+    if (ROOM_FIXED) return ROOM_FIXED;
+    const c = this.roomCounts();
+    for (let i = 1; i < 500; i++) if ((c[roomName(i)] || 0) < ROOM_CAP) return roomName(i);
+    return roomName(1);
+  },
+  async joinAuto() {
+    if (this.joining) return; this.joining = true;
+    const t0 = performance.now(), nap = ms => new Promise(r => setTimeout(r, ms));
+    while (!this.ok && performance.now() - t0 < 5000) await nap(100);   // 연결될 때까지 잠깐 기다림
+    while (this.ok && performance.now() < this.lobbyReadyAt) await nap(100); // 방별 인원 받아오기
+    this.joining = false;
+    this.join(this.pickRoom());
+  },
+  join(r) {
+    if (r === this.room) return;
+    if (this.room && this.ok) { this.bye(); this.c.unsubscribe(`${this.topic}/#`); }
+    for (const id of [...this.peers.keys()]) this.removePeer(id);
+    this.room = r;
+    if (this.ok) { this.c.subscribe(`${this.topic}/#`); this.c.publish(`${this.topic}/q/${myId}`, '1'); }
+    this.sendState(true); this.lobbyBeat(); updateCount();
+  },
+  lobbyBeat() { if (this.ok && entered && this.room) { this.lastLobby = Date.now(); this.c.publish(`${BASE}/lobby/${this.room}/${myId}`, '1'); } },
   state() {
     const f = v => Math.round(v * 100) / 100;
     return { id: myId, n: profile.name, l: [profile.hat, profile.hood, profile.mat], x: f(me.x), z: f(me.z), r: f(me.r), s: me.sit ? 1 : 0 };
   },
   sendState(force) {
-    if (!this.ok || !entered) return;
+    if (!this.ok || !entered || !this.room) return;
     const now = performance.now();
     if (!force && now - this.lastSend < 120) return;
     this.lastSend = now;
-    this.c.publish(`${TOPIC}/p/${myId}`, JSON.stringify(this.state()));
+    this.c.publish(`${this.topic}/p/${myId}`, JSON.stringify(this.state()));
   },
-  sendEmote(e) { if (this.ok && entered) this.c.publish(`${TOPIC}/e/${myId}`, JSON.stringify({ id: myId, e })); },
-  bye() { if (this.ok && entered) try { this.c.publish(`${TOPIC}/p/${myId}`, JSON.stringify({ id: myId, bye: 1 })); } catch (e) { } },
+  sendEmote(e) { if (this.ok && entered && this.room) this.c.publish(`${this.topic}/e/${myId}`, JSON.stringify({ id: myId, e })); },
+  bye() {
+    if (!this.ok || !entered || !this.room) return;
+    try { this.c.publish(`${this.topic}/p/${myId}`, JSON.stringify({ id: myId, bye: 1 })); this.c.publish(`${BASE}/lobby/${this.room}/${myId}`, '0'); } catch (e) { }
+  },
   onMsg(topic, buf) {
-    const parts = topic.split('/'), kind = parts[parts.length - 2], from = parts[parts.length - 1];
+    const parts = topic.split('/');
+    // 로비: 방별 인원 집계
+    if (parts[2] === 'lobbyq') { if (buf.toString() !== myId && entered) setTimeout(() => this.lobbyBeat(), rand(30, 500)); return; }
+    if (parts[2] === 'lobby') {
+      const r = parts[3], id = parts[4]; if (!r || !id || id === myId) return;
+      if (buf.toString() === '0') this.lobby.delete(id); else this.lobby.set(id, { r, t: Date.now() });
+      updateCount(); return;
+    }
+    if (parts[2] === 'bye') { const id = parts[3]; if (id !== myId) { this.lobby.delete(id); this.removePeer(id); } return; }
+    if (parts[2] !== this.room) return;
+    const kind = parts[parts.length - 2], from = parts[parts.length - 1];
     if (from === myId) return;
     if (kind === 'q') { this.replyAt = performance.now() + rand(150, 900); return; }
     let m; try { m = JSON.parse(buf.toString()); } catch (e) { return; }
@@ -1263,6 +1368,7 @@ const net = {
       if (![m.x, m.z, m.r].every(Number.isFinite)) return;
       const [x, z] = clampWalk(m.x, m.z);
       const look = { hat: clamp(m.l?.[0] | 0, 0, HAT_COLS.length - 1), hood: clamp(m.l?.[1] | 0, 0, HOOD_COLS.length - 1), mat: clamp(m.l?.[2] | 0, 0, 3) };
+      this.lobby.set(from, { r: this.room, t: Date.now() });
       let p = this.peers.get(from);
       if (!p) {
         if (this.peers.size >= 80) return;
@@ -1285,7 +1391,7 @@ const net = {
   removePeer(id) { const p = this.peers.get(id); if (!p) return; p.av.dispose(); p.label.remove(); this.peers.delete(id); updateCount(); },
   update(dt, t) {
     const now = performance.now();
-    if (entered && this.ok) {
+    if (entered && this.ok && this.room) {
       const changing = me.moving || (me.sit ? me.sitT < 1 : me.sitT > 0);
       if ((changing && now - this.lastSend > 130) || now - this.lastSend > 4000 || (this.replyAt && now > this.replyAt)) { this.replyAt = 0; this.sendState(true); }
     }
@@ -1301,9 +1407,179 @@ const net = {
   },
 };
 addEventListener('pagehide', () => net.bye());
-// 다른 탭에 가 있어도 자리 유지 (화면 루프가 멈춰도 신호는 보냄)
-setInterval(() => { if (entered && net.ok && performance.now() - net.lastSend > 4000) net.sendState(true); }, 2000);
 addEventListener('beforeunload', () => net.bye());
+// 다른 탭에 가 있어도 자리 유지 (화면 루프가 멈춰도 신호는 보냄) + 로비 신호
+setInterval(() => {
+  if (!entered || !net.ok) return;
+  if (performance.now() - net.lastSend > 4000) net.sendState(true);
+  if (Date.now() - net.lastLobby > 10000 || (net.lobbyReplyAt && Date.now() > net.lobbyReplyAt)) { net.lobbyReplyAt = 0; net.lobbyBeat(); }
+}, 1000);
+
+/* =========================================================
+   광안리 M 드론라이트쇼 (매주 토요일, 실제 일정)
+   - 동절기(10~2월) 19:00, 21:00 / 하절기(3~9월) 20:00, 22:00
+   - 첫째·셋째 토요일: 레이저 6분 → 드론 14분 → 레이저 4분
+   - 그 외 토요일: 드론 약 12분
+   ========================================================= */
+const DRONE_N = 1100;
+const FC = new THREE.Vector3(0, 128, -640); // 드론 대형 중심 (해변과 광안대교 사이 하늘)
+const dGeo = new THREE.BufferGeometry();
+const dPos = new Float32Array(DRONE_N * 3), dCol = new Float32Array(DRONE_N * 3), dSeed = new Float32Array(DRONE_N);
+for (let i = 0; i < DRONE_N; i++) dSeed[i] = Math.random();
+dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+dGeo.setAttribute('aCol', new THREE.BufferAttribute(dCol, 3));
+dGeo.setAttribute('aSeed', new THREE.BufferAttribute(dSeed, 1));
+const droneMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uA: { value: 0 }, uPR: { value: renderer.getPixelRatio() }, uT: { value: 0 } },
+  vertexShader: `attribute vec3 aCol; attribute float aSeed; uniform float uPR, uT; varying vec3 vC;
+    void main(){ vec4 mv = modelViewMatrix*vec4(position,1.); gl_Position = projectionMatrix*mv;
+      gl_PointSize = clamp(3400./(-mv.z), 3.2, 12.)*uPR; vC = aCol*(0.88+0.12*sin(uT*6.+aSeed*40.)); }`,
+  fragmentShader: `uniform float uA; varying vec3 vC;
+    void main(){ float d = length(gl_PointCoord-0.5)*2.; float core = smoothstep(0.55,0.,d); float glow = pow(max(0.,1.-d),2.)*0.7;
+      float i = core*1.3+glow; if(i < 0.02) discard; gl_FragColor = vec4(vC*i + vec3(core*0.45), uA); }`
+});
+const drones = new THREE.Points(dGeo, droneMat); drones.frustumCulled = false; drones.visible = false; scene.add(drones);
+
+// 레이저 (광안대교에서 하늘로)
+const LASER_N = 18;
+const lzGeo = new THREE.BufferGeometry(), lzPos = new Float32Array(LASER_N * 6), lzCol = new Float32Array(LASER_N * 6);
+lzGeo.setAttribute('position', new THREE.BufferAttribute(lzPos, 3)); lzGeo.setAttribute('color', new THREE.BufferAttribute(lzCol, 3));
+const lasers = new THREE.LineSegments(lzGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+lasers.frustumCulled = false; lasers.visible = false; scene.add(lasers);
+
+// 대형(모양) 만들기
+function sampleCanvas(draw, W, H, meters, n = DRONE_N) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.strokeStyle = '#fff'; draw(g, W, H);
+  const d = g.getImageData(0, 0, W, H).data, pts = [];
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (d[(y * W + x) * 4 + 3] > 128) pts.push([x, y]);
+  for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+  const out = new Float32Array(n * 3), s = meters / W;
+  for (let i = 0; i < n; i++) {
+    const p = pts.length ? pts[i % pts.length] : [W / 2, H / 2], rep = Math.floor(i / Math.max(pts.length, 1));
+    out[i * 3] = (p[0] - W / 2 + (rep ? rand(-1, 1) : 0)) * s; out[i * 3 + 1] = (H / 2 - p[1] + (rep ? rand(-1, 1) : 0)) * s; out[i * 3 + 2] = rand(-1.5, 1.5);
+  }
+  return out;
+}
+const KFONT = '"Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
+const textShape = (txt, meters, size = 120) => sampleCanvas((g, W, H) => { g.font = `900 ${size}px ${KFONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, W / 2, H / 2 + 4); }, 560, 200, meters);
+let SH = null;
+function buildShapes() {
+  if (SH) return SH;
+  const grid = new Float32Array(DRONE_N * 3), barge = new Float32Array(DRONE_N * 3), cols = 34;
+  for (let i = 0; i < DRONE_N; i++) {
+    const c = i % cols, r = Math.floor(i / cols);
+    grid[i * 3] = (c - cols / 2) * 7; grid[i * 3 + 1] = (r - 16) * 6.5; grid[i * 3 + 2] = 0;
+    barge[i * 3] = (c - cols / 2) * 2.2; barge[i * 3 + 1] = -FC.y + 3.5; barge[i * 3 + 2] = (r - 16) * 2.2;
+  }
+  const heart = sampleCanvas((g, W, H) => {
+    g.beginPath();
+    for (let k = 0; k <= 200; k++) { const t = k / 200 * Math.PI * 2, x = 16 * Math.sin(t) ** 3, y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); g.lineTo(W / 2 + x * 9, H / 2 - y * 9 - 10); }
+    g.fill();
+  }, 400, 360, 230);
+  const globe = new Float32Array(DRONE_N * 3), golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < DRONE_N; i++) { const y = 1 - (i / (DRONE_N - 1)) * 2, r = Math.sqrt(1 - y * y), th = golden * i; globe[i * 3] = Math.cos(th) * r * 95; globe[i * 3 + 1] = y * 95; globe[i * 3 + 2] = Math.sin(th) * r * 95; }
+  const whale = sampleCanvas((g, W, H) => {
+    g.beginPath(); g.ellipse(W * 0.45, H * 0.55, W * 0.3, H * 0.2, -0.05, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.moveTo(W * 0.7, H * 0.52); g.quadraticCurveTo(W * 0.8, H * 0.45, W * 0.86, H * 0.3); g.lineTo(W * 0.95, H * 0.24); g.lineTo(W * 0.9, H * 0.36); g.lineTo(W * 0.97, H * 0.42); g.lineTo(W * 0.86, H * 0.4); g.quadraticCurveTo(W * 0.8, H * 0.58, W * 0.7, H * 0.62); g.fill();
+    g.beginPath(); g.moveTo(W * 0.42, H * 0.7); g.lineTo(W * 0.5, H * 0.86); g.lineTo(W * 0.55, H * 0.7); g.fill();
+    g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(W * 0.27, H * 0.5, 6, 0, 7); g.fill();
+    g.globalCompositeOperation = 'source-over'; for (let k = 0; k < 5; k++) { g.fillRect(W * 0.3 + k * 6, H * 0.12 - k * 3, 3, H * 0.22); }
+  }, 520, 300, 300);
+  const gull = sampleCanvas((g, W, H) => {
+    g.lineWidth = 16; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(W * 0.08, H * 0.42); g.quadraticCurveTo(W * 0.28, H * 0.12, W * 0.5, H * 0.52); g.quadraticCurveTo(W * 0.72, H * 0.12, W * 0.92, H * 0.42); g.stroke();
+    g.beginPath(); g.ellipse(W * 0.5, H * 0.56, W * 0.07, H * 0.09, 0, 0, 7); g.fill();
+  }, 500, 260, 280);
+  SH = { grid, barge, heart, globe, whale, gull, t1: textShape('광안리', 300), t2: textShape('바다멍', 290), t3: textShape('또 만나요', 320, 104) };
+  return SH;
+}
+const _c = new THREE.Color();
+const hsl = (h, s, l) => _c.setHSL(((h % 1) + 1) % 1, s, l);
+// 장면: f(i, lt, o) → 위치(o: [x,y,z], 대형 중심 기준), c(i, lt, o) → 색
+function sceneList(D) {
+  const S = buildShapes();
+  const pick = (arr, i, o) => { o[0] = arr[i * 3]; o[1] = arr[i * 3 + 1]; o[2] = arr[i * 3 + 2]; };
+  const col = (o, r, g, b) => { o[0] = r; o[1] = g; o[2] = b; };
+  const list = [
+    { name: 'takeoff', d: 0.06, f: (i, t, o) => { const k = ss(0, 1, (t - (i % 34) * 0.12) / 16); pick(S.barge, i, o); const gx = S.grid[i * 3], gy = S.grid[i * 3 + 1]; o[0] = lerp(o[0], gx, k); o[1] = lerp(o[1], gy, k); o[2] = lerp(o[2], 0, k); }, c: (i, t, o) => col(o, 1, 0.92, 0.75) },
+    { name: '광안리', d: 0.12, f: (i, t, o) => pick(S.t1, i, o), c: (i, t, o) => { const x = S.t1[i * 3]; hsl(0.55 + x / 1400 + t * 0.01, 0.85, 0.6); col(o, _c.r, _c.g, _c.b); } },
+    { name: 'heart', d: 0.11, f: (i, t, o) => { pick(S.heart, i, o); const k = 1 + 0.07 * Math.max(0, Math.sin(t * 3.2)) ** 6; o[0] *= k; o[1] *= k; }, c: (i, t, o) => { hsl(0.96 + S.heart[i * 3 + 1] / 3000, 0.9, 0.58); col(o, _c.r, _c.g, _c.b); } },
+    { name: 'globe', d: 0.12, f: (i, t, o) => { const a = t * 0.35, x = S.globe[i * 3], z = S.globe[i * 3 + 2]; o[0] = x * Math.cos(a) - z * Math.sin(a); o[1] = S.globe[i * 3 + 1]; o[2] = x * Math.sin(a) + z * Math.cos(a); }, c: (i, t, o) => { const y = S.globe[i * 3 + 1] / 95, n = Math.sin(i * 0.37) * Math.cos(i * 0.11); if (n > 0.25) col(o, 0.3, 0.9, 0.45); else col(o, 0.15, 0.45 + 0.3 * (1 - Math.abs(y)), 1); } },
+    { name: 'whale', d: 0.13, f: (i, t, o) => { pick(S.whale, i, o); o[0] += Math.sin(t * 0.25) * 40; o[1] += Math.sin(t * 0.8 + o[0] * 0.02) * 6; }, c: (i, t, o) => { const y = S.whale[i * 3 + 1]; if (y > 40) col(o, 0.75, 0.9, 1); else hsl(0.58 + y / 2000, 0.85, 0.5 + y / 600); col(o, _c.r, _c.g, _c.b); if (y > 40) col(o, 0.75, 0.92, 1); } },
+    { name: '바다멍', d: 0.12, f: (i, t, o) => { pick(S.t2, i, o); o[1] += Math.sin(t * 1.2 + o[0] * 0.03) * 4; }, c: (i, t, o) => col(o, 0.5, 0.95, 0.85) },
+    { name: 'gull', d: 0.12, f: (i, t, o) => { pick(S.gull, i, o); const ax = Math.abs(o[0]); o[1] += Math.sin(t * 2.2) * ax * 0.28; o[0] += Math.sin(t * 0.3) * 30; }, c: (i, t, o) => col(o, 1, 1, 1) },
+    { name: '또 만나요', d: 0.14, f: (i, t, o) => pick(S.t3, i, o), c: (i, t, o) => { const sp = (Math.sin(i * 12.9 + Math.floor(t * 3) * 7.1) > 0.92) ? 1 : 0; col(o, 1, 0.85 + 0.15 * sp, 0.45 + 0.55 * sp); } },
+    { name: 'landing', d: 0.08, f: (i, t, o) => { const k = ss(0, 1, (t - 4 - (i % 34) * 0.1) / 14); pick(S.grid, i, o); const bx = S.barge[i * 3], by = S.barge[i * 3 + 1], bz = S.barge[i * 3 + 2]; o[0] = lerp(o[0], bx, k); o[1] = lerp(o[1], by, k); o[2] = lerp(o[2], bz, k); }, c: (i, t, o) => col(o, 1, 0.92, 0.75) },
+  ];
+  const sum = list.reduce((a, s) => a + s.d, 0); let acc = 0;
+  list.forEach(s => { s.start = acc; s.len = s.d / sum * D; acc += s.len; });
+  return list;
+}
+// 지금 드론쇼 상태 (실제 시각 기준, 모두가 같은 장면을 봄)
+let dronePreview = null; // { start(ms), dur }
+let droneScenes = null, droneScenesD = 0;
+function droneShow(ms) {
+  if (dronePreview) {
+    const t = (performance.now() - dronePreview.start) / 1000;
+    if (t < dronePreview.dur + 2) return { on: true, t, D: dronePreview.dur, laser: t < 8 ? 1 : 0, droneT: t - 8, droneD: dronePreview.dur - 8, preview: true };
+    dronePreview = null;
+  }
+  if (params.has('drone')) { const t = (performance.now() / 1000) % 200; return { on: true, t, laser: 0, droneT: t, droneD: 190 }; }
+  const p = kst(ms); if (p.dow !== 6) return { on: false };
+  const winter = p.m >= 9 || p.m <= 1, starts = winter ? [19, 21] : [20, 22];
+  const laserDay = (p.d >= 1 && p.d <= 7) || (p.d >= 15 && p.d <= 21);
+  const min = p.h * 60 + p.mi + p.s / 60;
+  for (const h of starts) {
+    const t = (min - h * 60) * 60;
+    if (laserDay && t >= 0 && t < 1440) return { on: true, t, laser: (t < 360 || t > 1200) ? 1 : 0, droneT: t - 360, droneD: 840, start: h };
+    if (!laserDay && t >= 0 && t < 750) return { on: true, t, laser: 0, droneT: t, droneD: 750, start: h };
+  }
+  return { on: false, next: starts.find(h => min < h * 60), laserDay };
+}
+const _o = [0, 0, 0], _p = [0, 0, 0], _cc = [0, 0, 0], _pc = [0, 0, 0];
+let droneA = 0, laserA = 0, lastDroneOn = false;
+function updateDrones(ms, dt, t) {
+  const st = droneShow(ms);
+  const flying = st.on && st.droneT >= 0 && st.droneT < st.droneD;
+  droneA = lerp(droneA, flying ? 1 : 0, 1 - Math.exp(-dt * 2));
+  laserA = lerp(laserA, st.on && st.laser ? 1 : 0, 1 - Math.exp(-dt * 2));
+  if (st.on && !lastDroneOn) toast(st.preview ? '드론쇼 미리보기를 시작해요' : '광안리 M 드론라이트쇼가 시작됐어요');
+  lastDroneOn = st.on;
+  drones.visible = droneA > 0.01; lasers.visible = laserA > 0.01;
+  if (drones.visible) {
+    if (!droneScenes || droneScenesD !== st.droneD) { droneScenes = sceneList(st.droneD); droneScenesD = st.droneD; }
+    const T = clamp(flying ? st.droneT : (st.droneT < 0 ? 0 : st.droneD - 0.01), 0, st.droneD - 0.01);
+    let k = droneScenes.findIndex(s => T >= s.start && T < s.start + s.len); if (k < 0) k = droneScenes.length - 1;
+    const S = droneScenes[k], P = droneScenes[k - 1], lt = T - S.start, TR = Math.min(7, S.len * 0.4);
+    for (let i = 0; i < DRONE_N; i++) {
+      S.f(i, lt, _o); S.c(i, lt, _cc);
+      if (P && lt < TR + 2) {
+        const e = ss(0, 1, (lt - dSeed[i] * 2) / TR);
+        if (e < 1) { P.f(i, P.len, _p); P.c(i, P.len, _pc); for (let j = 0; j < 3; j++) { _o[j] = lerp(_p[j], _o[j], e); _cc[j] = lerp(_pc[j], _cc[j], e); } }
+      }
+      dPos[i * 3] = FC.x + _o[0]; dPos[i * 3 + 1] = FC.y + _o[1]; dPos[i * 3 + 2] = FC.z + _o[2];
+      dCol[i * 3] = _cc[0]; dCol[i * 3 + 1] = _cc[1]; dCol[i * 3 + 2] = _cc[2];
+    }
+    dGeo.attributes.position.needsUpdate = true; dGeo.attributes.aCol.needsUpdate = true;
+    droneMat.uniforms.uA.value = droneA * (0.35 + 0.65 * env.night); droneMat.uniforms.uT.value = t;
+  }
+  if (lasers.visible) {
+    const pal = [[0.1, 1, 0.3], [0.1, 0.9, 1], [1, 0.2, 0.9], [1, 1, 1], [0.3, 0.4, 1]];
+    const cA = pal[Math.floor(t / 6) % pal.length], cB = pal[(Math.floor(t / 6) + 2) % pal.length];
+    for (let i = 0; i < LASER_N; i++) {
+      const u = i / (LASER_N - 1), x = lerp(-470, 470, u), ox = x, oy = deckY(x) + 4, oz = bz(x) + 14;
+      const az = (u - 0.5) * 1.1 + 0.45 * Math.sin(t * 0.7 + i * 0.35), el = 0.08 + 0.38 * (0.5 + 0.5 * Math.sin(t * 0.55 + i * 0.6));
+      const dx = Math.sin(az) * Math.cos(el), dy = Math.sin(el), dz = Math.cos(az) * Math.cos(el), L = 2600;
+      lzPos.set([ox, oy, oz, ox + dx * L, oy + dy * L, oz + dz * L], i * 6);
+      const c = i % 2 ? cA : cB, a = laserA * env.night;
+      lzCol.set([c[0] * a, c[1] * a, c[2] * a, c[0] * a * 0.1, c[1] * a * 0.1, c[2] * a * 0.1], i * 6);
+    }
+    lzGeo.attributes.position.needsUpdate = true; lzGeo.attributes.color.needsUpdate = true;
+  }
+  return st;
+}
 
 /* ---------- 이름표 ---------- */
 const labelsEl = document.getElementById('labels');
@@ -1339,7 +1615,16 @@ $('btnSound').onclick = () => {
   $('btnSound').innerHTML = muted ? icoOff : icoOn;
 };
 $('btnView').onclick = () => { view.mode = view.mode === '3p' ? '1p' : '3p'; toast(view.mode === '3p' ? '뒷모습 시점' : '내 눈 시점'); };
-$('btnSettings').onclick = () => $('panel').classList.toggle('hidden');
+$('btnSettings').onclick = () => { $('panel').classList.toggle('hidden'); $('peopleList').classList.add('hidden'); updateDroneInfo(); };
+function updateDroneInfo() {
+  const ms = simNow(), p = kst(ms), winter = p.m >= 9 || p.m <= 1, hs = winter ? '저녁 7시·9시' : '저녁 8시·10시';
+  const st = droneShow(ms);
+  let msg = `실제 광안리처럼 매주 토요일 ${hs}에 드론 1,100대가 떠요 (약 12분, 첫째·셋째 토요일은 레이저쇼 포함).`;
+  if (st.on && !st.preview) msg = '지금 드론쇼가 진행 중이에요!';
+  else if (p.dow === 6 && st.next) msg = `오늘 ${st.next - 12}시에 드론쇼가 있어요. ` + msg;
+  $('droneInfo').textContent = msg;
+}
+$('dronePrev').onclick = () => { dronePreview = { start: performance.now(), dur: 150 }; $('panel').classList.add('hidden'); view.tPitch = 0.12; };
 // 장면 담기: 3D 화면 + 이름표 + 워터마크를 한 장으로 합성
 const UA = navigator.userAgent, inApp = /Instagram|FBAN|FBAV|KAKAOTALK|NAVER|Line\/|DaumApps|everytimeApp/i.test(UA) || params.has('fakeinapp');
 const isIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || params.get('fakeinapp') === 'ios';
@@ -1456,16 +1741,31 @@ $('btnWave').onclick = doWave;
 function updateCount() {
   const n = net.peers.size + (entered ? 1 : 0);
   $('pc').textContent = net.ok ? n : '–';
-  $('introCount').textContent = net.ok ? `지금 ${net.peers.size}명이 광안리에 앉아 있어요 · 소리가 나와요, 이어폰 추천` : '파도 · 갈매기 · 사람들 · 차 소리가 나와요. 이어폰 추천';
+  const total = net.totalCount();
+  $('introCount').textContent = net.ok ? `지금 ${total}명이 광안리에 앉아 있어요 · 소리가 나와요, 이어폰 추천` : '파도 · 갈매기 · 사람들 · 차 소리가 나와요. 이어폰 추천';
   if (!$('peopleList').classList.contains('hidden')) renderPeople();
 }
 function setNetStatus() { $('btnPeople').title = net.ok ? '함께 있는 사람' : '연결 중… (연결이 안 되면 혼자 보기로 동작해요)'; updateCount(); }
 function renderPeople() {
   const L = $('peopleList'); L.innerHTML = '';
-  const h = document.createElement('h4'); h.textContent = net.ok ? `함께 있는 사람 ${net.peers.size + (entered ? 1 : 0)}명` : '연결 중이에요'; L.appendChild(h);
+  const h = document.createElement('h4');
+  h.textContent = net.ok && net.room ? `${roomLabel(net.room)} · ${net.peers.size + (entered ? 1 : 0)}명` : '연결 중이에요'; L.appendChild(h);
   const add = (n, mine) => { const d = document.createElement('div'); d.textContent = (mine ? '(나) ' : '') + n; L.appendChild(d); };
   if (entered) add(profile.name, true);
   for (const p of net.peers.values()) add(p.name || '...', false);
+  if (!net.ok || !entered || ROOM_FIXED) return;
+  const c = net.roomCounts(); const rooms = Object.keys(c).filter(r => roomNo(r) && r !== net.room).sort((a, b) => roomNo(a) - roomNo(b));
+  let empty = 1; while (c[roomName(empty)]) empty++;
+  if (roomName(empty) !== net.room) rooms.push(roomName(empty));
+  const h2 = document.createElement('h4'); h2.textContent = '다른 해변 (한 곳에 최대 ' + ROOM_CAP + '명)'; h2.style.marginTop = '14px'; L.appendChild(h2);
+  rooms.forEach(r => {
+    const d = document.createElement('div'); d.className = 'roomrow';
+    const full = (c[r] || 0) >= ROOM_CAP;
+    d.innerHTML = `<span>${roomLabel(r)} · ${c[r] || 0}명</span>`;
+    const b = document.createElement('button'); b.textContent = full ? '꽉 참' : '이동'; b.disabled = full;
+    b.onclick = () => { net.join(r); toast(`${roomLabel(r)}으로 옮겼어요`); renderPeople(); };
+    d.appendChild(b); L.appendChild(d);
+  });
 }
 $('btnPeople').onclick = () => { $('peopleList').classList.toggle('hidden'); $('panel').classList.add('hidden'); renderPeople(); };
 function enter(withSound) {
@@ -1474,7 +1774,7 @@ function enter(withSound) {
   saveProfile(); me.label.querySelector('span').textContent = profile.name;
   entered = true; sitStart = performance.now();
   $('intro').classList.add('out');
-  net.sendState(true); updateCount();
+  net.joinAuto().then(() => { if (!ROOM_FIXED && net.room !== 'main') setTimeout(() => toast(`1번 해변이 꽉 차서 ${roomLabel(net.room)}에 자리 잡았어요`), 3200); });
   if (withSound) { amb.start(); muted = false; $('btnSound').innerHTML = icoOn; }
   setTimeout(() => toast(isTouch ? '바닥을 누르면 걸어가요 · 두 번 누르면 거기 앉아요' : '바닥 클릭 또는 WASD로 걷기 · 더블클릭하면 거기 앉아요'), 1400);
   setTimeout(() => toast(phaseText()), 6500);
@@ -1489,6 +1789,8 @@ function phaseText() {
   if (a > 12) return morning ? '맑은 오전, 파도 소리가 좋아요' : '한낮의 광안리';
   if (a > 0) return morning ? '해가 막 떠올랐어요' : '해가 지고 있어요 · 일몰 ' + hhmm(st.set);
   if (a > -7) return morning ? '여명이 밝아오는 중 · 일출 ' + hhmm(st.rise) : '노을이 번지는 시간';
+  const ds = droneShow(ms); if (ds.on && !ds.preview) return '드론쇼가 펼쳐지는 중이에요';
+  if (kst(ms).dow === 6 && ds.next) return `오늘 저녁 ${ds.next - 12}시에 드론쇼가 있어요`;
   return env.act && env.act.led ? '광안대교에 불이 켜졌어요' : '조용한 밤바다';
 }
 
@@ -1516,7 +1818,7 @@ function frame(now) {
   env.ledT = lerp(env.ledT || 0, env.ledTarget || 0, 0.02);
   lightMat.uniforms.uLed.value = env.ledT; lightMat.uniforms.uTime.value = elapsed; stars.material.uniforms.uT.value = elapsed;
   // 다리 위 차
-  const act = env.act || { cars: 0.5, people: 0.5, gulls: 0.5 };
+  const act = Object.assign({}, env.act || { cars: 0.5, people: 0.5, gulls: 0.5 });
   cars.forEach((c, i) => {
     c.x += c.v * dt; if (c.x > BR.x1) c.x = BR.x0; if (c.x < BR.x0) c.x = BR.x1;
     const on = c.act < act.cars * 0.85 + 0.1, n = bNorm(c.x), off = c.up ? 4 : -4;
@@ -1533,6 +1835,8 @@ function frame(now) {
   updateMe(dt);
   poseAvatar(me.av, { sitT: me.sitT, walk: me.walk, ph: me.ph, waveW: waveW(me.waveStart, elapsed) }, me.x, me.z, me.r, elapsed);
   net.update(dt, elapsed);
+  const dst = updateDrones(ms, dt, elapsed);
+  if (dst.on) act.people = Math.min(1, act.people + 0.3);
   updateCamera(elapsed, dt);
   updateLabels();
   amb.update(act, trig);
@@ -1543,7 +1847,7 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 updateEnv(simNow());
 net.connect();
 requestAnimationFrame(frame);
-window.__dbg = { env, T, setMode, view, amb, me, net, setSit, doWave };
+window.__dbg = { env, T, setMode, view, amb, me, net, setSit, doWave, droneShow, get dronePreview() { return dronePreview; }, set dronePreview(v) { dronePreview = v; } };
 </script>
 </body>
 </html>
