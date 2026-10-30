@@ -92,10 +92,14 @@
   .shotbox { width: min(92vw, 900px); text-align: center; }
   #shotImg { max-width: 100%; max-height: 68vh; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.5); -webkit-touch-callout: default; user-select: auto; }
   #shotTip { font-size: 12.5px; opacity: .75; margin: 12px 0 14px; line-height: 1.5; }
-  .shotbtns { display: flex; gap: 10px; justify-content: center; }
-  .shotbtns button { border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.12); color: #fff; font-size: 15px; padding: 11px 26px; border-radius: 999px; cursor: pointer; }
+  .shotbtns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .shotbtns button { white-space: nowrap; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.12); color: #fff; font-size: 15px; padding: 11px 22px; border-radius: 999px; cursor: pointer; }
   #shotSave { background: #e9f6f4 !important; color: #0c1a1a !important; font-weight: 600; }
-  #intro small.inapp { display: block; margin-top: 12px; color: #ffd98a; opacity: .95; line-height: 1.5; }
+  #intro .inapp { margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: rgba(255,217,138,.12); border: 1px solid rgba(255,217,138,.35); color: #ffe2a6; font-size: 13px; line-height: 1.5; }
+  #intro .inapp p { margin: 0 0 8px; opacity: 1; font-size: 13px; }
+  #intro .inapp p.sub { margin: 8px 0 0; font-size: 11.5px; opacity: .75; }
+  #intro .inapp button { font-size: 14px; padding: 9px 20px; background: #ffd98a; color: #2a1d00; border: 0; font-weight: 600; }
+  #shotExt { background: #ffd98a !important; color: #2a1d00 !important; font-weight: 600; border: 0 !important; }
   #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .5s; }
   @media (max-width: 600px) {
     #topL { top: 12px; left: 12px; padding: 8px 12px; gap: 8px; }
@@ -1337,8 +1341,8 @@ $('btnSound').onclick = () => {
 $('btnView').onclick = () => { view.mode = view.mode === '3p' ? '1p' : '3p'; toast(view.mode === '3p' ? '뒷모습 시점' : '내 눈 시점'); };
 $('btnSettings').onclick = () => $('panel').classList.toggle('hidden');
 // 장면 담기: 3D 화면 + 이름표 + 워터마크를 한 장으로 합성
-const UA = navigator.userAgent, inApp = /Instagram|FBAN|FBAV|KAKAOTALK|NAVER|Line\/|DaumApps|everytimeApp/i.test(UA);
-const isIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const UA = navigator.userAgent, inApp = /Instagram|FBAN|FBAV|KAKAOTALK|NAVER|Line\/|DaumApps|everytimeApp/i.test(UA) || params.has('fakeinapp');
+const isIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) || params.get('fakeinapp') === 'ios';
 function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function captureScene() {
   renderer.render(scene, camera);
@@ -1375,7 +1379,7 @@ $('btnShot').onclick = () => {
   const url = c.toDataURL('image/jpeg', 0.92);
   $('shotImg').src = url;
   c.toBlob(b => { shotBlob = b; }, 'image/jpeg', 0.92);
-  $('shotTip').textContent = inApp && isIOS ? '사진을 길게 눌러 저장하세요. 안 되면 오른쪽 위 ··· 에서 Safari로 열어주세요.' : '안 되면 사진을 길게 눌러 저장할 수 있어요.';
+  $('shotTip').textContent = inApp && isIOS ? '인스타 안에서는 아이폰이 사진 저장을 막아요. 사진을 길게 눌러보고, 안 되면 Safari로 열어 다시 찍어주세요.' : '안 되면 사진을 길게 눌러 저장할 수 있어요.';
   $('shot').classList.remove('hidden');
   $('flash').style.transition = 'none'; $('flash').style.opacity = 0.7; requestAnimationFrame(() => { $('flash').style.transition = 'opacity .6s'; $('flash').style.opacity = 0; });
 };
@@ -1391,7 +1395,22 @@ $('shotSave').onclick = async () => {
 };
 $('shotClose').onclick = () => $('shot').classList.add('hidden');
 $('shot').onclick = e => { if (e.target.id === 'shot') $('shot').classList.add('hidden'); };
-if (inApp) { const n = document.createElement('small'); n.className = 'inapp'; n.textContent = isIOS ? '인스타·카톡 안에서 열었다면 오른쪽 위 ··· → "Safari로 열기"를 누르면 소리와 사진 저장이 더 잘 돼요' : '앱 안 브라우저라면 ⋮ → "다른 브라우저로 열기"를 누르면 더 잘 돼요'; document.querySelector('#intro .card').appendChild(n); }
+// 인스타·카톡 등 앱 안 브라우저 → Safari/크롬으로 바로 열기
+function openExternal() {
+  const here = location.href.replace(/^https?:\/\//, '');
+  if (/KAKAOTALK/i.test(UA)) location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+  else if (isIOS) location.href = 'x-safari-https://' + here;
+  else location.href = 'intent://' + here + '#Intent;scheme=https;package=com.android.chrome;end';
+}
+const extLabel = isIOS ? 'Safari로 열기' : '크롬으로 열기';
+if (inApp) {
+  const box = document.createElement('div'); box.className = 'inapp';
+  box.innerHTML = `<p>${isIOS ? '인스타·카톡 안에서는 아이폰이 소리와 사진 저장을 막아요.' : '앱 안 브라우저에서는 일부 기능이 막힐 수 있어요.'}</p><button type="button">${extLabel}</button><p class="sub">안 열리면 오른쪽 위 ··· → "${isIOS ? 'Safari로 열기' : '다른 브라우저로 열기'}"</p>`;
+  box.querySelector('button').onclick = openExternal;
+  document.querySelector('#intro .card').appendChild(box);
+  const b2 = document.createElement('button'); b2.id = 'shotExt'; b2.textContent = isIOS ? 'Safari에서 저장' : '크롬에서 저장'; b2.onclick = openExternal;
+  document.querySelector('.shotbtns').prepend(b2);
+}
 document.querySelectorAll('#panel input[data-k]').forEach(el => el.oninput = () => amb.setLevel(el.dataset.k, el.value / 100));
 function setMode(m) {
   if (m === 'lapse') { T.lapseBase = simNow(); T.lapseStart = performance.now(); }
